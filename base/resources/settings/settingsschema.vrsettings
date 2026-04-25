@@ -1,0 +1,201 @@
+[
+  {
+    "title": "Pimax Native",
+    "controller": "pimax_native_settings",
+    "show_without_hmd": false,
+    "values": [
+      {
+        "name": "/settings/driver_pimax_native/haptics_strength",
+        "control": "slider",
+        "type": "float",
+        "label": "Vibration Strength",
+        "min": 0,
+        "max": 1,
+        "step": 0.05,
+        "decimals": 2
+      },
+      {
+        "name": "/settings/driver_pimax_native/use_windows_key",
+        "control": "select",
+        "label": "Use Pimax/Windows Button",
+        "type": "int",
+        "options": [
+          {
+            "value": 0,
+            "label": "None"
+          },
+          {
+            "value": 1,
+            "label": "Controllers Only"
+          },
+          {
+            "value": 2,
+            "label": "Keyboard Only"
+          },
+          {
+            "value": 3,
+            "label": "Both"
+          }
+        ]
+      },
+      {
+        "name": "/settings/driver_pimax_native/gamma_mode",
+        "control": "toggle",
+        "label": "Color Correction Mode",
+        "advanced_only": true,
+        "on_label": "Advanced",
+        "off_label": "Simple"
+      },
+      {
+        "name": "/settings/driver_pimax_native/rgb_gain",
+        "control": "slider",
+        "type": "float",
+        "label": "Brightness",
+        "min": 0.1,
+        "max": 5,
+        "step": 0.05,
+        "decimals": 2,
+        "requires": {
+          "/settings/driver_pimax_native/gamma_mode": 0
+        }
+      },
+      {
+        "name": "/settings/driver_pimax_native/red_gain",
+        "control": "slider",
+        "type": "float",
+        "label": "Red Gain",
+        "advanced_only": true,
+        "min": 0,
+        "max": 5,
+        "step": 0.05,
+        "decimals": 2,
+        "requires": {
+          "/settings/driver_pimax_native/gamma_mode": 1
+        }
+      },
+      {
+        "name": "/settings/driver_pimax_native/green_gain",
+        "control": "slider",
+        "type": "float",
+        "label": "Green Gain",
+        "advanced_only": true,
+        "min": 0,
+        "max": 5,
+        "step": 0.05,
+        "decimals": 2,
+        "requires": {
+          "/settings/driver_pimax_native/gamma_mode": 1
+        }
+      },
+      {
+        "name": "/settings/driver_pimax_native/blue_gain",
+        "control": "slider",
+        "type": "float",
+        "label": "Blue Gain",
+        "advanced_only": true,
+        "min": 0,
+        "max": 5,
+        "step": 0.05,
+        "decimals": 2,
+        "requires": {
+          "/settings/driver_pimax_native/gamma_mode": 1
+        }
+      },
+      {
+        "name": "/settings/driver_pimax_native/horizontal_fov_tangent",
+        "control": "slider",
+        "type": "float",
+        "label": "Horizontal FOV Tangent",
+        "advanced_only": true,
+        "min": 0.4,
+        "max": 1,
+        "step": 0.01,
+        "decimals": 2,
+        "requires_restart": true
+      },
+      {
+        "name": "/settings/driver_pimax_native/vertical_fov_tangent",
+        "control": "slider",
+        "type": "float",
+        "label": "Vertical FOV Tangent",
+        "advanced_only": true,
+        "min": 0.4,
+        "max": 1,
+        "step": 0.01,
+        "decimals": 2,
+        "requires_restart": true
+      },
+      {
+        "name": "/settings/driver_pimax_native/use_hidden_area_mesh",
+        "control": "toggle",
+        "label": "Use Hidden Area Mesh",
+        "advanced_only": true,
+        "on_label": "Yes",
+        "off_label": "No",
+        "requires": {
+          "/settings/driver_pimax_native/horizontal_fov_tangent": 1,
+          "/settings/driver_pimax_native/vertical_fov_tangent": 1
+        },
+        "requires_restart": true
+      },
+      {
+        "name": "/settings/driver_pimax_native/force_3dof",
+        "control": "toggle",
+        "label": "Force 3DoF Mode (Without Controllers)",
+        "advanced_only": true,
+        "on_label": "Yes",
+        "off_label": "No"
+      },
+      {
+        "name": "/settings/driver_pimax_native/use_eye_tracking",
+        "control": "toggle",
+        "label": "Use Eye Tracking (When Supported)",
+        "on_label": "Yes",
+        "off_label": "No",
+        "requires_restart": true
+      },
+      {
+        "name": "/settings/driver_pimax_native/developer_mode",
+        "type": "bool"
+      },
+      {
+        "name": "/settings/driver_pimax_native/use_async_tracking",
+        "control": "toggle",
+        "label": "Use Async Tracking Update",
+        "advanced_only": true,
+        "on_label": "Yes",
+        "off_label": "No",
+        "requires_restart": true,
+        "requires": {
+          "/settings/driver_pimax_native/developer_mode": true
+        }
+      },
+      {
+        "name": "/settings/driver_pimax_native/async_tracking_period",
+        "control": "slider",
+        "type": "int",
+        "label": "Async Tracking Period (ms)",
+        "advanced_only": true,
+        "min": 1,
+        "max": 10,
+        "step": 1,
+        "requires": {
+          "/settings/driver_pimax_native/developer_mode": true,
+          "/settings/driver_pimax_native/use_async_tracking": true
+        }
+      },
+      {
+        "name": "/settings/driver_pimax_native/disable_withdll",
+        "control": "toggle",
+        "label": "Disable WithDLL Injection",
+        "advanced_only": true,
+        "on_label": "Disable",
+        "off_label": "Auto",
+        "requires_restart": true,
+        "requires": {
+          "/settings/driver_pimax_native/developer_mode": true
+        }
+      }
+    ]
+  }
+]

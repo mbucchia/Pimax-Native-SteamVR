@@ -1,0 +1,19 @@
+{
+  "driver_pimax_native": {
+    "loadPriority": 1,
+    "haptics_strength": 1,
+    "use_windows_key": 3,
+    "gamma_mode": 0,
+    "rgb_gain": 1,
+    "red_gain": 1,
+    "green_gain": 1,
+    "blue_gain": 1,
+    "horizontal_fov_tangent": 1,
+    "vertical_fov_tangent": 1,
+    "use_hidden_area_mesh": true,
+    "force_3dof": false,
+    "use_eye_tracking": true,
+    "use_async_tracking": false,
+    "async_tracking_period": 2
+  }
+}

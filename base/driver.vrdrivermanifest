@@ -1,0 +1,7 @@
+{
+	"name" : "pimax_native",
+
+	"hmd_presence": [
+		"34A4.*"
+	]
+}
