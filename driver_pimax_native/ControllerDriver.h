@@ -24,6 +24,8 @@
 
 namespace driver {
 
+    static constexpr uint64_t k_UniverseId = 0x50494D4158; // "PIMAX"
+
     struct IControllerDriver : public vr::ITrackedDeviceServerDriver {
         virtual ~IControllerDriver() = default;
         virtual void SendHapticEvent(const vr::VREvent_HapticVibration_t& data) = 0;

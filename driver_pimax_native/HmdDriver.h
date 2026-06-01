@@ -24,9 +24,6 @@
 
 namespace driver {
 
-    // TODO: Experiment to find the optimal value.
-    constexpr uint32_t k_distortionMapSize = 256;
-
     struct IHmdDriver : public vr::ITrackedDeviceServerDriver {
         virtual ~IHmdDriver() = default;
         virtual void SendHapticEvent(const vr::VREvent_HapticVibration_t& data) = 0;

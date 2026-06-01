@@ -26,6 +26,8 @@
 #define NOMINMAX
 #include <windows.h>
 
+#include <shlobj_core.h>
+#include <KnownFolders.h>
 #include <TraceLoggingActivity.h>
 #include <TraceLoggingProvider.h>
 #include <wrl.h>

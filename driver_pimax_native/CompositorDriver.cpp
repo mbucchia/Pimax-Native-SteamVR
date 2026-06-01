@@ -22,12 +22,16 @@
 
 #include "pch.h"
 
+// This is used for debugging, mostly to inject RenderDoc into vrcompositor.
+
 #ifdef _DEBUG
 
 #include "CompositorDriver.h"
 #include "ErrorHandling.h"
 #include "Tracing.h"
 #include "Utilities.h"
+
+#pragma comment(lib, "d3d11.lib")
 
 using namespace driver;
 using namespace util;

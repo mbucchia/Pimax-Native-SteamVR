@@ -2,6 +2,11 @@
 #include <windows.h>
 #include <winrt/base.h>
 
+#include <shlobj_core.h>
+#include <KnownFolders.h>
+
+#include <filesystem>
+#include <fstream>
 #include <future>
 #include <iostream>
 #include <string>
@@ -13,6 +18,8 @@
 
 #include "VertexShader.h"
 #include "PixelShader.h"
+
+#include <PVR_API.h>
 
 #pragma comment(lib, "d3d11.lib")
 
@@ -61,7 +68,11 @@ int GetEnvironmentInt(const LPCSTR name, const int defaultValue) {
 }
 
 winrt::handle s_shm[3];
+void* s_shmMemory[3];
+winrt::handle s_queryMeshEvent;
+winrt::handle s_meshReadyEvent;
 WCHAR s_mapPath[MAX_PATH] = {};
+bool s_dumpForDriver = false;
 UINT s_mapSize = 0;
 
 DECLARE_DETOUR_FUNCTION(void,
@@ -70,10 +81,19 @@ DECLARE_DETOUR_FUNCTION(void,
                         UINT IndexCount,
                         UINT StartIndexLocation,
                         INT BaseVertexLocation) {
-    static bool captured = false;
+    // Auto-capture at startup.
+    static bool triggered = true;
+
+    // Check for a new query.
+    if (WaitForSingleObject(s_queryMeshEvent.get(), 0) == WAIT_OBJECT_0) {
+        printf("\n=======================================================================\n"
+               "Trigger!"
+               "\n=======================================================================\n");
+        triggered = true;
+    }
 
     // PCS mesh is 24576. Pimax Play also draws a few more things, but with a lot less triangles.
-    if (!captured && s_mapSize && IndexCount > 10000) {
+    if (triggered && s_mapSize && IndexCount > 10000) {
         winrt::com_ptr<ID3D11Device> device;
         pContext->GetDevice(device.put());
         winrt::com_ptr<ID3D11Device1> device1 = device.as<ID3D11Device1>();
@@ -229,11 +249,8 @@ DECLARE_DETOUR_FUNCTION(void,
                 context1->OMSetRenderTargets(3, rtvs, nullptr);
             }
 
-            if (s_mapPath[0]) {
-                // Save the output to DDS.
-                D3DX11SaveTextureToFileW(context1.get(), texture.get(), D3DX11_IFF_DDS, s_mapPath);
-            } else {
-                // Shove into a SHM instead.
+            {
+                // Shove into a SHM.
                 winrt::com_ptr<ID3D11Texture2D> staging;
                 {
                     D3D11_TEXTURE2D_DESC desc = {};
@@ -248,34 +265,84 @@ DECLARE_DETOUR_FUNCTION(void,
                 context1->CopyResource(staging.get(), texture.get());
 
                 const UINT size = s_mapSize * s_mapSize * sizeof(float) * 4;
-                const auto createShm = [&](const WCHAR* name, UINT subresourceIndex) {
-                    // Create the SHM.
-                    *s_shm[subresourceIndex].put() =
-                        CreateFileMapping(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, size, name);
-                    winrt::check_pointer(s_shm[subresourceIndex].get());
-                    void* memory =
-                        MapViewOfFile(s_shm[subresourceIndex].get(), FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, size);
-                    winrt::check_pointer(memory);
-
-                    // Copy the map.
+                for (UINT subresourceIndex = 0; subresourceIndex < 3; subresourceIndex++) {
                     D3D11_MAPPED_SUBRESOURCE mapping = {};
                     winrt::check_hresult(context1->Map(staging.get(), subresourceIndex, D3D11_MAP_READ, 0, &mapping));
-                    memcpy(memory, mapping.pData, size);
+                    memcpy(s_shmMemory[subresourceIndex], mapping.pData, size);
                     context1->Unmap(staging.get(), subresourceIndex);
-                };
-                createShm(L"DistortionExtractor.Red", 0);
-                createShm(L"DistortionExtractor.Green", 1);
-                createShm(L"DistortionExtractor.Blue", 2);
-            }
+                }
 
-            printf("\n=======================================================================\n"
-                   "Capture completed!"
-                   "\n=======================================================================\n");
+                printf("\n=======================================================================\n"
+                       "Capture completed!"
+                       "\n=======================================================================\n");
+
+#ifdef _DEBUG
+                if (s_mapPath[0]) {
+                    // Save the output to DDS.
+                    D3DX11SaveTextureToFileW(context1.get(), texture.get(), D3DX11_IFF_DDS, s_mapPath);
+
+                    // End ourselves.
+                    GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+                }
+#endif
+
+                if (s_dumpForDriver) {
+                    // Get the headset serial number.
+                    pvrEnvHandle pvr = {};
+                    pvr_initialise(&pvr);
+                    pvrSessionHandle session = {};
+                    pvr_createSession(pvr, &session);
+                    pvrHmdInfo info = {};
+                    pvr_getHmdInfo(session, &info);
+
+                    // And additional info.
+                    pvrEyeRenderInfo renderInfo[pvrEye_Count] = {};
+                    pvr_getEyeRenderInfo(session, pvrEye_Left, &renderInfo[pvrEye_Left]);
+                    pvr_getEyeRenderInfo(session, pvrEye_Right, &renderInfo[pvrEye_Right]);
+                    pvrSizei viewportSize = {};
+                    pvr_getFovTextureSize(session, pvrEye_Left, renderInfo[pvrEye_Left].Fov, 1.f, &viewportSize);
+
+                    const float eyeInfo[11] = {
+                        renderInfo[pvrEye_Left].Fov.UpTan,
+                        renderInfo[pvrEye_Left].Fov.DownTan,
+                        renderInfo[pvrEye_Left].Fov.LeftTan,
+                        renderInfo[pvrEye_Left].Fov.RightTan,
+                        renderInfo[pvrEye_Right].Fov.UpTan,
+                        renderInfo[pvrEye_Right].Fov.DownTan,
+                        renderInfo[pvrEye_Right].Fov.LeftTan,
+                        renderInfo[pvrEye_Right].Fov.RightTan,
+                        (float)viewportSize.w,
+                        (float)viewportSize.h,
+                        (float)s_mapSize,
+                    };
+
+                    // Save the output so that the SteamVR driver can use it.
+                    WCHAR* path = nullptr;
+                    SHGetKnownFolderPath(FOLDERID_ProgramData, 0, nullptr, &path);
+                    const auto rootPath = std::filesystem::path(path ? path : L"") / "Pimax-Native-SteamVR";
+                    CoTaskMemFree(path);
+                    CreateDirectoryW(rootPath.wstring().c_str(), nullptr);
+
+                    const auto outputPath = rootPath / info.SerialNumber;
+                    std::ofstream of(outputPath, std::ios::binary | std::ios::trunc | std::ofstream::out);
+                    of.write((char*)eyeInfo, sizeof(eyeInfo));
+                    of.write((char*)s_shmMemory[0], size);
+                    of.write((char*)s_shmMemory[1], size);
+                    of.write((char*)s_shmMemory[2], size);
+                    of.close();
+
+                    // End ourselves.
+                    GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+                }
+
+                // Signal SteamVR.
+                SetEvent(s_meshReadyEvent.get());
+            }
 
             // Restore context.
             context1->SwapDeviceContextState(savedContext.get(), nullptr);
 
-            captured = true;
+            triggered = false;
         }
     }
 
@@ -293,12 +360,31 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     case DLL_PROCESS_ATTACH:
         s_mapSize = GetEnvironmentInt("DISTORTION_EXTRACTOR_SIZE", 256);
         GetEnvironmentVariableW(L"DISTORTION_EXTRACTOR_PATH", s_mapPath, MAX_PATH);
+        s_dumpForDriver = GetEnvironmentInt("DISTORTION_EXTRACTOR_DUMP_FOR_DRIVER", 0);
 
         printf("\n=======================================================================\n"
                "Enabling distortion extractor to '%ws' with resolution %u"
                "\n=======================================================================\n",
                s_mapPath,
                s_mapSize);
+
+        {
+            // Initialize shared resources right away so that SteamVR can open them.
+            *s_queryMeshEvent.put() = CreateEvent(nullptr, false, false, L"Global\\DistortionExtractorQueryMesh");
+            *s_meshReadyEvent.put() = CreateEvent(nullptr, true, false, L"Global\\DistortionExtractorMeshReady");
+            const UINT size = s_mapSize * s_mapSize * sizeof(float) * 4;
+            const auto createShm = [&](const WCHAR* name, UINT index) {
+                // Create the SHM.
+                *s_shm[index].put() = CreateFileMapping(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, size, name);
+                winrt::check_pointer(s_shm[index].get());
+                s_shmMemory[index] = MapViewOfFile(s_shm[index].get(), FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, size);
+                winrt::check_pointer(s_shmMemory[index]);
+                memset(s_shmMemory[index], 0, size);
+            };
+            createShm(L"DistortionExtractor.Red", 0);
+            createShm(L"DistortionExtractor.Green", 1);
+            createShm(L"DistortionExtractor.Blue", 2);
+        }
 
         // We can't create COM objects in DllMain(). Defer to an async worker.
         deferredHook = std::async(std::launch::async, []() {

@@ -5,4 +5,3 @@
 /bin/distribution/*
 /bin/x64/Debug/*
 /bin/x64/Release/*
-!/bin/x64/Release/nvapi_null_output.dll

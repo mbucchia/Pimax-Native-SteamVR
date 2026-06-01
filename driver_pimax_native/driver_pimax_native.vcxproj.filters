@@ -13,9 +13,6 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="Detours">
-      <UniqueIdentifier>{f3439683-ea23-4f32-88e0-68218ac7ec3f}</UniqueIdentifier>
-    </Filter>
     <Filter Include="cJSON">
       <UniqueIdentifier>{a13c352b-565c-4d15-b177-f1b159a887f6}</UniqueIdentifier>
     </Filter>
@@ -44,9 +41,6 @@
     </ClInclude>
     <ClInclude Include="..\external\cJSON\cJSON.h">
       <Filter>cJSON</Filter>
-    </ClInclude>
-    <ClInclude Include="..\external\detours\src\detours.h">
-      <Filter>Detours</Filter>
     </ClInclude>
     <ClInclude Include="SharedMemory.h">
       <Filter>Header Files</Filter>
@@ -82,24 +76,6 @@
     </ClCompile>
     <ClCompile Include="..\external\cJSON\cJSON.c">
       <Filter>cJSON</Filter>
-    </ClCompile>
-    <ClCompile Include="..\external\detours\src\creatwth.cpp">
-      <Filter>Detours</Filter>
-    </ClCompile>
-    <ClCompile Include="..\external\detours\src\detours.cpp">
-      <Filter>Detours</Filter>
-    </ClCompile>
-    <ClCompile Include="..\external\detours\src\disasm.cpp">
-      <Filter>Detours</Filter>
-    </ClCompile>
-    <ClCompile Include="..\external\detours\src\disolx64.cpp">
-      <Filter>Detours</Filter>
-    </ClCompile>
-    <ClCompile Include="..\external\detours\src\image.cpp">
-      <Filter>Detours</Filter>
-    </ClCompile>
-    <ClCompile Include="..\external\detours\src\modules.cpp">
-      <Filter>Detours</Filter>
     </ClCompile>
     <ClCompile Include="CameraDriver.cpp">
       <Filter>Source Files</Filter>

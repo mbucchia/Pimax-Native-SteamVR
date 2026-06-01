@@ -7,9 +7,3 @@
 [submodule "external/cJSON"]
 	path = external/cJSON
 	url = https://github.com/DaveGamble/cJSON.git
-[submodule "nvapi_null_output"]
-	path = nvapi_null_output
-	url = https://github.com/mbucchia/nvapi_null_output.git
-[submodule "external/detours"]
-	path = external/detours
-	url = https://github.com/microsoft/Detours.git

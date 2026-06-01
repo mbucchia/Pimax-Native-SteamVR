@@ -166,20 +166,4 @@ namespace util {
         return error::_Fmt("(%.3f, %.3f)", vec.x, vec.y);
     }
 
-    template <typename TMethod>
-    void DetourFunctionAttach(TMethod target, TMethod hooked, TMethod& original) {
-        if (original) {
-            // Already hooked.
-            return;
-        }
-
-        DetourTransactionBegin();
-        DetourUpdateThread(GetCurrentThread());
-
-        original = target;
-        DetourAttach((PVOID*)&original, hooked);
-
-        DetourTransactionCommit();
-    }
-
 } // namespace util

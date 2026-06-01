@@ -28,7 +28,6 @@ jobs:
     - name: Checkout submodules
       working-directory: ${{env.GITHUB_WORKSPACE}}
       run: |
-        git rm nvapi_null_output
         git submodule update --init
 
     - name: Setup DevEnv

@@ -47,10 +47,8 @@ namespace {
             TraceLocalActivity(local);
             TraceLoggingWriteStart(local, "HmdDriver_Ctor");
 
-            // Enable parallel projections.
-            CHECK_PVRCMD(pvr_setIntConfig(m_pvrSession, "view_rotation_fix", 1));
-
             // Cache all the useful state.
+
             CHECK_PVRCMD(pvr_getHmdInfo(m_pvrSession, &m_pvrHmdInfo));
             TraceLoggingWriteTagged(local,
                                     "HmdDriver_Ctor_HmdInfo",
@@ -63,12 +61,7 @@ namespace {
                                     TLArg(m_pvrHmdInfo.FirmwareMajor, "FirmwareMajor"),
                                     TLArg(m_pvrHmdInfo.Resolution.w, "ResolutionWidth"),
                                     TLArg(m_pvrHmdInfo.Resolution.h, "ResolutionHeight"));
-
-            if (vr::VRSettings()->GetBool("driver_pimax_native", "use_eye_tracking")) {
-                // Crystal OG, Crystal Super, Dream Air SE, Dream Air.
-                m_hasEyeTracking = m_pvrHmdInfo.ProductId == 0x0012 || m_pvrHmdInfo.ProductId == 0x0040 ||
-                                   m_pvrHmdInfo.ProductId == 0x0042 || m_pvrHmdInfo.ProductId == 0x0044;
-            }
+            DriverLog("Product: %s (%04x)", m_pvrHmdInfo.ProductName, m_pvrHmdInfo.ProductId);
 
             CHECK_PVRCMD(pvr_getEyeDisplayInfo(m_pvrSession, pvrEye_Left, &m_pvrDisplayInfo));
             TraceLoggingWriteTagged(local,
@@ -88,14 +81,89 @@ namespace {
             m_displayResolutionWidth = m_pvrDisplayInfo.width / 2;
             m_displayResolutionHeight = m_pvrDisplayInfo.height;
 
+            m_photonTime = pvr_getTrackedDeviceFloatProperty(m_pvrSession,
+                                                             pvrTrackedDevice_HMD,
+                                                             pvrTrackedDeviceProp_SecondsFromVsyncToPhotons_Float,
+                                                             1.f / m_pvrDisplayInfo.refresh_rate);
+            DriverLog("Photon Time: %.1fms", m_photonTime * 1000.f);
+
+            CHECK_PVRCMD(pvr_setIntConfig(m_pvrSession, "view_rotation_fix", 0));
             CHECK_PVRCMD(pvr_getEyeRenderInfo(m_pvrSession, pvrEye_Left, &m_pvrEyeRenderInfo[0]));
             CHECK_PVRCMD(pvr_getEyeRenderInfo(m_pvrSession, pvrEye_Right, &m_pvrEyeRenderInfo[1]));
+            const auto cantingAngle = PVR::Quatf{m_pvrEyeRenderInfo[pvrEye_Left].HmdToEyePose.Orientation}.Angle(
+                                          m_pvrEyeRenderInfo[pvrEye_Right].HmdToEyePose.Orientation) /
+                                      2.f;
+            DriverLog("Canting Angle: %.4f", cantingAngle);
+            m_currentIpd = pvr_getFloatConfig(m_pvrSession, CONFIG_KEY_IPD, m_currentIpd);
 
-            // Initial pose fields.
-            m_latestPose.qWorldFromDriverRotation.w = m_latestPose.qDriverFromHeadRotation.w =
-                m_latestPose.qRotation.w = 1.f;
-            m_latestPose.deviceIsConnected = true;
-            m_latestPose.result = vr::TrackingResult_Running_OutOfRange;
+            CHECK_PVRCMD(pvr_getFovTextureSize(
+                m_pvrSession, pvrEye_Left, m_pvrEyeRenderInfo[pvrEye_Left].Fov, 1.f, &m_viewportSize));
+
+            bool hasHiddenAreaMesh = false;
+            for (int eye = 0; eye < pvrEye_Count; eye++) {
+                size_t count;
+
+                count =
+                    pvr_getEyeHiddenAreaMesh(m_pvrSession, (pvrEyeType)eye, pvrHiddenAreaMesh_HiddenArea, nullptr, 0);
+                m_hiddenAreaMesh[eye].resize(count);
+                pvr_getEyeHiddenAreaMesh(m_pvrSession,
+                                         (pvrEyeType)eye,
+                                         pvrHiddenAreaMesh_HiddenArea,
+                                         (pvrVector2f*)m_hiddenAreaMesh[eye].data(),
+                                         (unsigned int)m_hiddenAreaMesh[eye].size());
+
+                count =
+                    pvr_getEyeHiddenAreaMesh(m_pvrSession, (pvrEyeType)eye, pvrHiddenAreaMesh_VisibleArea, nullptr, 0);
+                m_visibleAreaMesh[eye].resize(count);
+                pvr_getEyeHiddenAreaMesh(m_pvrSession,
+                                         (pvrEyeType)eye,
+                                         pvrHiddenAreaMesh_VisibleArea,
+                                         (pvrVector2f*)m_visibleAreaMesh[eye].data(),
+                                         (unsigned int)m_visibleAreaMesh[eye].size());
+
+                hasHiddenAreaMesh = hasHiddenAreaMesh || m_hiddenAreaMesh[eye].size();
+            }
+
+            const auto vstType = pvr_getVSTType(m_pvrSession);
+            if (vstType != pvrVSTTypeNone) {
+                const auto format = pvr_getVSTStreamFormat(m_pvrSession);
+                DriverLog("Supports VST: %d, %d", vstType, format);
+
+                if (format == pvrVST_FORMAT_NV12 || format == pvrVST_FORMAT_RAW8) {
+#if 0 // TODO: For now we disable the camera since it causes hang.
+                    m_cameraDriver = CreateCameraDriver(m_pvr, m_pvrSession);
+                    m_hasVST = true;
+#endif
+                } else {
+                    DriverLog("Unsupported stream format, VST will be unavailable");
+                }
+            }
+
+            if (vr::VRSettings()->GetBool("driver_pimax_native", "use_eye_tracking")) {
+                // Crystal OG, Crystal Super, Dream Air SE, Dream Air.
+                m_hasEyeTracking = m_pvrHmdInfo.ProductId == 0x0012 || m_pvrHmdInfo.ProductId == 0x0040 ||
+                                   m_pvrHmdInfo.ProductId == 0x0042 || m_pvrHmdInfo.ProductId == 0x0044;
+
+                if (m_hasEyeTracking) {
+                    DriverLog("Supports eye tracking");
+                }
+            }
+
+            m_playbackDevice = pvr_getTrackedDeviceStringPropertyHelper(
+                m_pvrSession, pvrTrackedDevice_HMD, pvrTrackedDeviceProp_Audio_PlaybackDeviceId_String);
+            m_recordingDevice = pvr_getTrackedDeviceStringPropertyHelper(
+                m_pvrSession, pvrTrackedDevice_HMD, pvrTrackedDeviceProp_Audio_RecordingDeviceId_String);
+            TraceLoggingWriteTagged(local,
+                                    "HmdDriver_Activate",
+                                    TLArg(m_pvrHmdInfo.ProductName, "ProductName"),
+                                    TLArg(m_pvrHmdInfo.ProductId, "ProductId"),
+                                    TLArg(m_photonTime, "VsyncToPhotons"),
+                                    TLArg(m_pvrDisplayInfo.edid_vid, "EdidVid"),
+                                    TLArg(m_pvrDisplayInfo.edid_pid, "EdidPid"),
+                                    TLArg(hasHiddenAreaMesh, "HasHiddenAreaMesh"),
+                                    TLArg((int)vstType, "VSTType"),
+                                    TLArg(m_playbackDevice.c_str(), "PlaybackDevice"),
+                                    TLArg(m_recordingDevice.c_str(), "RecordingDevice"));
 
             TraceLoggingWriteStop(local, "HmdDriver_Ctor");
         }
@@ -111,28 +179,20 @@ namespace {
             TraceLocalActivity(local);
             TraceLoggingWriteStart(local, "HmdDriver_Activate", TLArg(unObjectId, "ObjectId"));
 
-            // WORKAROUND: Always start with 72Hz for now. There seems to be an issue with vrcompositor initializing
-            // other modes. This is not great at all, because it changes a global setting :(
-            vr::VRSettings()->SetFloat(vr::k_pch_SteamVR_Section, vr::k_pch_SteamVR_PreferredRefreshRate, 72.f);
-
             m_deviceIndex = unObjectId;
 
             const vr::PropertyContainerHandle_t container =
                 vr::VRProperties()->TrackedDeviceToPropertyContainer(m_deviceIndex);
 
-            DriverLog("Product: %s (%04x)", m_pvrHmdInfo.ProductName, m_pvrHmdInfo.ProductId);
             vr::VRProperties()->SetStringProperty(container, vr::Prop_TrackingSystemName_String, "Pimax");
             vr::VRProperties()->SetStringProperty(container, vr::Prop_ModelNumber_String, m_pvrHmdInfo.ProductName);
             vr::VRProperties()->SetStringProperty(container, vr::Prop_ManufacturerName_String, "Pimax");
             vr::VRProperties()->SetStringProperty(container, vr::Prop_SerialNumber_String, m_pvrHmdInfo.SerialNumber);
 
             vr::VRProperties()->SetStringProperty(container, vr::Prop_RenderModelName_String, "generic_hmd");
-            vr::VRProperties()->SetUint64Property(container, vr::Prop_CurrentUniverseId_Uint64, 1);
+            vr::VRProperties()->SetUint64Property(container, vr::Prop_CurrentUniverseId_Uint64, k_UniverseId);
 
-            const auto photonTime = pvr_getTrackedDeviceFloatProperty(
-                m_pvrSession, pvrTrackedDevice_HMD, pvrTrackedDeviceProp_SecondsFromVsyncToPhotons_Float, 0.01f);
-            DriverLog("Photon Time: %.1fms", photonTime * 1000.f);
-            vr::VRProperties()->SetFloatProperty(container, vr::Prop_SecondsFromVsyncToPhotons_Float, photonTime);
+            vr::VRProperties()->SetFloatProperty(container, vr::Prop_SecondsFromVsyncToPhotons_Float, m_photonTime);
 
             vr::VRProperties()->SetInt32Property(container, vr::Prop_EdidVendorID_Int32, m_pvrDisplayInfo.edid_vid);
             vr::VRProperties()->SetInt32Property(container, vr::Prop_EdidProductID_Int32, m_pvrDisplayInfo.edid_pid);
@@ -141,15 +201,7 @@ namespace {
             vr::VRProperties()->SetBoolProperty(container, vr::Prop_IsOnDesktop_Bool, false);
             vr::VRProperties()->SetBoolProperty(container, vr::Prop_DisplayAllowNightMode_Bool, true);
 
-            m_currentIpd = pvr_getFloatConfig(m_pvrSession, CONFIG_KEY_IPD, m_currentIpd);
-            {
-                const PVR::Matrix4f eyeToHead[] = {
-                    PVR::Matrix4(PVR::Posef(m_pvrEyeRenderInfo[pvrEye_Left].HmdToEyePose)),
-                    PVR::Matrix4(PVR::Posef(m_pvrEyeRenderInfo[pvrEye_Right].HmdToEyePose))};
-                vr::VRServerDriverHost()->SetDisplayEyeToHead(
-                    m_deviceIndex, StoreHmdMatrix34(eyeToHead[pvrEye_Left]), StoreHmdMatrix34(eyeToHead[pvrEye_Right]));
-            }
-            vr::VRProperties()->SetFloatProperty(container, vr::Prop_UserIpdMeters_Float, m_currentIpd);
+            UpdateEyeProperties();
 
             m_horizontalFovTangent = vr::VRSettings()->GetFloat("driver_pimax_native", "horizontal_fov_tangent");
             m_verticalFovTangent = vr::VRSettings()->GetFloat("driver_pimax_native", "vertical_fov_tangent");
@@ -163,32 +215,14 @@ namespace {
             if (vr::VRSettings()->GetBool("driver_pimax_native", "use_hidden_area_mesh") && !useFovTangent) {
                 vr::CVRHiddenAreaHelpers helpers = {vr::VRPropertiesRaw()};
                 for (int eye = 0; eye < pvrEye_Count; eye++) {
-                    std::vector<vr::HmdVector2_t> vertices;
-                    size_t count;
-
-                    count = pvr_getEyeHiddenAreaMesh(
-                        m_pvrSession, (pvrEyeType)eye, pvrHiddenAreaMesh_HiddenArea, nullptr, 0);
-                    vertices.resize(count);
-                    pvr_getEyeHiddenAreaMesh(m_pvrSession,
-                                             (pvrEyeType)eye,
-                                             pvrHiddenAreaMesh_HiddenArea,
-                                             (pvrVector2f*)vertices.data(),
-                                             (unsigned int)vertices.size());
-                    helpers.SetHiddenArea(
-                        (vr::EVREye)eye, vr::k_eHiddenAreaMesh_Standard, vertices.data(), (uint32_t)vertices.size());
-
-                    count = pvr_getEyeHiddenAreaMesh(
-                        m_pvrSession, (pvrEyeType)eye, pvrHiddenAreaMesh_VisibleArea, nullptr, 0);
-                    vertices.resize(count);
-                    pvr_getEyeHiddenAreaMesh(m_pvrSession,
-                                             (pvrEyeType)eye,
-                                             pvrHiddenAreaMesh_VisibleArea,
-                                             (pvrVector2f*)vertices.data(),
-                                             (unsigned int)vertices.size());
-                    helpers.SetHiddenArea(
-                        (vr::EVREye)eye, vr::k_eHiddenAreaMesh_Inverse, vertices.data(), (uint32_t)vertices.size());
-
-                    hasHiddenAreaMesh = hasHiddenAreaMesh || vertices.size();
+                    helpers.SetHiddenArea((vr::EVREye)eye,
+                                          vr::k_eHiddenAreaMesh_Standard,
+                                          m_hiddenAreaMesh[eye].data(),
+                                          (uint32_t)m_hiddenAreaMesh[eye].size());
+                    helpers.SetHiddenArea((vr::EVREye)eye,
+                                          vr::k_eHiddenAreaMesh_Inverse,
+                                          m_visibleAreaMesh[eye].data(),
+                                          (uint32_t)m_visibleAreaMesh[eye].size());
                 }
             }
             vr::VRProperties()->SetStringProperty(
@@ -199,36 +233,19 @@ namespace {
 
             vr::VRProperties()->SetStringProperty(container, vr::Prop_ExpectedControllerType_String, "oculus_touch");
 
-            const auto vstType = pvr_getVSTType(m_pvrSession);
-            if (vstType != pvrVSTTypeNone) {
-                const auto format = pvr_getVSTStreamFormat(m_pvrSession);
-                DriverLog("Supports VST: %d, %d", vstType, format);
-
-                if (format == pvrVST_FORMAT_NV12 || format == pvrVST_FORMAT_RAW8) {
-                    // TODO: For now we disable the camera since it causes hang.
-#if 0
-                    m_cameraDriver = CreateCameraDriver(m_pvr, m_pvrSession);
-                    m_cameraDriver->Activate(m_deviceIndex);
-#endif
-                } else {
-                    DriverLog("Unsupported stream format, VST will be unavailable");
-                }
+            if (m_cameraDriver) {
+                m_cameraDriver->Activate(m_deviceIndex);
             }
 
             if (m_hasEyeTracking) {
-                DriverLog("Supports eye tracking");
                 vr::VRProperties()->SetBoolProperty(container, vr::Prop_SupportsXrEyeGazeInteraction_Bool, true);
                 vr::VRDriverInput()->CreateEyeTrackingComponent(container, "/eyetracking", &m_eyeTrackingComponent);
             }
 
-            const auto playbackDevice = pvr_getTrackedDeviceStringPropertyHelper(
-                m_pvrSession, pvrTrackedDevice_HMD, pvrTrackedDeviceProp_Audio_PlaybackDeviceId_String);
-            const auto recordingDevice = pvr_getTrackedDeviceStringPropertyHelper(
-                m_pvrSession, pvrTrackedDevice_HMD, pvrTrackedDeviceProp_Audio_RecordingDeviceId_String);
             vr::VRProperties()->SetStringProperty(
-                container, vr::Prop_Audio_DefaultPlaybackDeviceId_String, playbackDevice.c_str());
+                container, vr::Prop_Audio_DefaultPlaybackDeviceId_String, m_playbackDevice.c_str());
             vr::VRProperties()->SetStringProperty(
-                container, vr::Prop_Audio_DefaultRecordingDeviceId_String, recordingDevice.c_str());
+                container, vr::Prop_Audio_DefaultRecordingDeviceId_String, m_recordingDevice.c_str());
 
             // clang-format off
             vr::VRProperties()->SetStringProperty(container, vr::Prop_NamedIconPathDeviceOff_String, "{pimax_native}/icons/headset_status_off.png");
@@ -246,109 +263,70 @@ namespace {
                                                   vr::Prop_AdditionalDeviceSettingsPath_String,
                                                   "{pimax_native}/settings/settingsschema.vrsettings");
 
-            TraceLoggingWriteTagged(local,
-                                    "HmdDriver_Activate",
-                                    TLArg(m_pvrHmdInfo.ProductName, "ProductName"),
-                                    TLArg(m_pvrHmdInfo.ProductId, "ProductId"),
-                                    TLArg(photonTime, "VsyncToPhotons"),
-                                    TLArg(m_pvrDisplayInfo.edid_vid, "EdidVid"),
-                                    TLArg(m_pvrDisplayInfo.edid_pid, "EdidPid"),
-                                    TLArg(m_currentIpd, "Ipd"),
-                                    TLArg(hasHiddenAreaMesh, "HasHiddenAreaMesh"),
-                                    TLArg((int)vstType, "VSTType"),
-                                    TLArg(playbackDevice.c_str(), "PlaybackDevice"),
-                                    TLArg(recordingDevice.c_str(), "RecordingDevice"));
-
             // Setup IPC with the client utility.
             *m_sharedFileHandle.put() = CreateFileMapping(
                 INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(*m_sharedMemory), L"PimaxNative.SharedMemory");
             if (m_sharedFileHandle) {
                 m_sharedMemory = (shared::SharedMemory*)MapViewOfFile(
                     m_sharedFileHandle.get(), FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, sizeof(*m_sharedMemory));
-                memset(m_sharedMemory, 0, sizeof(*m_sharedMemory));
+                if (m_sharedMemory) {
+                    memset(m_sharedMemory, 0, sizeof(*m_sharedMemory));
+                }
             }
 
             // This must be done after initializing the IPC to the client utility.
             ApplySettingsChanges();
 
-            // Prepare to retrieve the distortion map.
-            const auto openDistortionShm = [&](const WCHAR* name, UINT channel) {
-                constexpr UINT size = k_distortionMapSize * k_distortionMapSize * sizeof(float) * 4;
-                *m_sharedDistortionMapHandle[channel].put() =
-                    OpenFileMapping(FILE_MAP_READ | FILE_MAP_WRITE, false, name);
-                if (m_sharedDistortionMapHandle[channel]) {
-                    m_sharedDistortionMap[channel] = (float*)MapViewOfFile(
-                        m_sharedDistortionMapHandle[channel].get(), FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, size);
-                } else {
-                    DriverLog("Failed to open '%ws'", name);
-                }
-            };
-            openDistortionShm(L"DistortionExtractor.Red", 0);
-            openDistortionShm(L"DistortionExtractor.Green", 1);
-            openDistortionShm(L"DistortionExtractor.Blue", 2);
-
-            if (m_sharedDistortionMap[0] && m_sharedDistortionMap[1] && m_sharedDistortionMap[2]) {
-                vr::VRProperties()->SetInt32Property(
-                    container, vr::Prop_DistortionMeshResolution_Int32, k_distortionMapSize);
-            }
-
-#if 0
-            std::ofstream outFile("d:\\dist.txt");
-            for (uint32_t v = 0; v < k_distortionMapSize; v++) {
-                for (uint32_t u = 0; u < k_distortionMapSize; u++) {
-                    const uint32_t rowPitch = k_distortionMapSize * 4;
-                    if (m_sharedDistortionMap && m_sharedDistortionMap[0][v * rowPitch + u * 4 + 3]) {
-                        outFile << "(" << m_sharedDistortionMap[0][v * rowPitch + u * 4 + 0] << ","
-                                << m_sharedDistortionMap[0][v * rowPitch + u * 4 + 1] << "), ";
-                    } else {
-                        outFile << "(NONE),";
-                    }
-                }
-                outFile << "\n";
-            }
-#endif
-
-            // WORKAROUND: To make PVR happy and receive controller/inputs, we must call pvr_beginFrame() from
-            // RunFrame(), which requires to have bound a D3D device via a dummy swapchain.
+            // Load the distortion map
             {
-#pragma comment(lib, "dxgi.lib")
-#pragma comment(lib, "d3d11.lib")
-                ComPtr<IDXGIFactory1> dxgiFactory;
-                CHECK_HRCMD(CreateDXGIFactory1(IID_PPV_ARGS(dxgiFactory.ReleaseAndGetAddressOf())));
+                WCHAR* path = nullptr;
+                SHGetKnownFolderPath(FOLDERID_ProgramData, 0, nullptr, &path);
+                const auto rootPath = std::filesystem::path(path ? path : L"") / "Pimax-Native-SteamVR";
+                CoTaskMemFree(path);
 
-                ComPtr<IDXGIAdapter1> dxgiAdapter;
-                for (UINT adapterIndex = 0;; adapterIndex++) {
-                    // EnumAdapters1 will fail with DXGI_ERROR_NOT_FOUND when there are no more adapters to
-                    // enumerate.
-                    CHECK_HRCMD(dxgiFactory->EnumAdapters1(adapterIndex, dxgiAdapter.ReleaseAndGetAddressOf()));
-
-                    DXGI_ADAPTER_DESC1 desc;
-                    CHECK_HRCMD(dxgiAdapter->GetDesc1(&desc));
-                    if (!memcmp(&desc.AdapterLuid, &m_pvrDisplayInfo.luid, sizeof(LUID))) {
-                        break;
+                std::ifstream ifs;
+                {
+                    const auto mapPath = rootPath / m_pvrHmdInfo.SerialNumber;
+                    ifs.open(mapPath, std::ios::binary);
+                    if (ifs.is_open()) {
+                        DriverLog("Found distortion map for headset S/N %s", m_pvrHmdInfo.SerialNumber);
                     }
                 }
+                if (!ifs.is_open()) {
+                    const uint32_t length = vr::VRResources()->GetResourceFullPath(
+                        (std::string("{pimax_native}/distortion/") + m_pvrHmdInfo.ProductName).c_str(),
+                        nullptr,
+                        nullptr,
+                        0);
+                    std::string mapPath;
+                    mapPath.resize(length);
+                    vr::VRResources()->GetResourceFullPath(
+                        (std::string("{pimax_native}/distortion/") + m_pvrHmdInfo.ProductName).c_str(),
+                        nullptr,
+                        mapPath.data(),
+                        length);
+                    ifs.open(mapPath, std::ios::binary);
+                    if (ifs.is_open()) {
+                        DriverLog("Using generic distortion map for %s", m_pvrHmdInfo.ProductName);
+                    }
+                }
+                if (ifs.is_open()) {
+                    float renderInfo[11] = {};
+                    ifs.read((char*)renderInfo, sizeof(renderInfo));
+                    m_distortionMapSize = (uint32_t)std::round(renderInfo[10]);
 
-                const D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
-                CHECK_HRCMD(D3D11CreateDevice(dxgiAdapter.Get(),
-                                              D3D_DRIVER_TYPE_UNKNOWN,
-                                              0,
-                                              D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                                              &featureLevel,
-                                              1,
-                                              D3D11_SDK_VERSION,
-                                              m_d3dDummyDevice.ReleaseAndGetAddressOf(),
-                                              nullptr,
-                                              nullptr));
-
-                pvrTextureSwapChainDesc desc = {};
-                desc.Width = desc.Height = 128;
-                desc.ArraySize = desc.MipLevels = desc.SampleCount = 1;
-                desc.Format = PVR_FORMAT_R8G8B8A8_UNORM_SRGB;
-                desc.StaticImage = true;
-                pvrTextureSwapChain swapchain = {};
-                CHECK_PVRCMD(pvr_createTextureSwapChainDX(m_pvrSession, m_d3dDummyDevice.Get(), &desc, &swapchain));
+                    const UINT size = m_distortionMapSize * m_distortionMapSize * sizeof(float) * 4;
+                    for (int channel = 0; channel < 3; channel++) {
+                        m_distortionMap[channel].resize(size);
+                        ifs.read(m_distortionMap[channel].data(), size);
+                    }
+                    ifs.close();
+                }
             }
+
+            DriverLog("Setting mesh resolution to %u", m_distortionMapSize);
+            vr::VRProperties()->SetInt32Property(
+                container, vr::Prop_DistortionMeshResolution_Int32, m_distortionMapSize);
 
             TraceLoggingWriteStop(local, "HmdDriver_Activate");
 
@@ -363,18 +341,9 @@ namespace {
                 m_updateThread.join();
             }
 
-            for (uint32_t channel = 0; channel < 3; channel++) {
-                if (m_sharedDistortionMapHandle[channel]) {
-                    UnmapViewOfFile(m_sharedDistortionMap[channel]);
-                    m_sharedDistortionMap[channel] = nullptr;
-                }
-            }
             if (m_sharedMemory) {
                 UnmapViewOfFile(m_sharedMemory);
                 m_sharedMemory = nullptr;
-            }
-            if (m_sharedFileHandle) {
-                m_sharedFileHandle.reset();
             }
 
             if (m_cameraDriver) {
@@ -411,8 +380,8 @@ namespace {
         }
 
         vr::DriverPose_t GetPose() override {
-            std::shared_lock lock(m_poseMutex);
-            return m_latestPose;
+            // This method is not used by SteamVR.
+            return {};
         }
 
         void DebugRequest(const char* pchRequest, char* pchResponseBuffer, uint32_t unResponseBufferSize) override {
@@ -433,13 +402,9 @@ namespace {
             TraceLocalActivity(local);
             TraceLoggingWriteStart(local, "HmdDriver_GetRecommendedRenderTargetSize", TLArg(m_deviceIndex, "ObjectId"));
 
-            pvrSizei viewportSize;
-            CHECK_PVRCMD(pvr_getFovTextureSize(
-                m_pvrSession, pvrEye_Left, m_pvrEyeRenderInfo[pvrEye_Left].Fov, 1.f, &viewportSize));
-
-            *pnWidth = (uint32_t)(viewportSize.w * m_horizontalFovTangent);
+            *pnWidth = (uint32_t)(m_viewportSize.w * m_horizontalFovTangent);
             *pnWidth = (*pnWidth + 3) / 4 * 4;
-            *pnHeight = (uint32_t)(viewportSize.h * m_verticalFovTangent);
+            *pnHeight = (uint32_t)(m_viewportSize.h * m_verticalFovTangent);
             *pnHeight = (*pnHeight + 3) / 4 * 4;
 
             TraceLoggingWriteStop(local,
@@ -499,62 +464,65 @@ namespace {
                                    TLArg(fU, "U"),
                                    TLArg(fV, "V"));
 
+            // TODO: Add FOV tangents calculation.
+
             vr::DistortionCoordinates_t result;
-            // TODO: PVR does not give the correct map, only gives identity.
-            // For now, we use a distortion extraction process from pi_server, and convert the mesh to the format
-            // expected here.
-            if (m_sharedDistortionMap[0] && m_sharedDistortionMap[1] && m_sharedDistortionMap[2]) {
+            if (!m_distortionMap[0].empty() && !m_distortionMap[1].empty() && !m_distortionMap[2].empty()) {
                 // Convert from UV coordinates (in increment of Prop_DistortionMeshResolution_Int32 =
-                // k_distortionMapSize) back to array indices.
+                // m_distortionMapSize) back to array indices.
                 // - Don't forget to round the values to nearest to counteract the imprecision of floats when converting
                 //   back to integer.
                 // - Don't forget to mirror the right eye (we only have one mesh for both eyes).
                 // - Clamp to avoid any buffer over/underflow.
                 //
                 // clang-format off
-                const int32_t u = std::clamp((int32_t)std::round((eEye == vr::Eye_Left ? fU : (1.f - fU)) * (k_distortionMapSize - 1)), 0, (int32_t)k_distortionMapSize - 1);
-                const int32_t v = std::clamp((int32_t)std::round(                                    fV   * (k_distortionMapSize - 1)), 0, (int32_t)k_distortionMapSize - 1);
+                const int32_t u = std::clamp((int32_t)std::round((eEye == vr::Eye_Left ? fU : (1.f - fU)) * (m_distortionMapSize - 1)), 0, (int32_t)m_distortionMapSize - 1);
+                const int32_t v = std::clamp((int32_t)std::round(                                    fV   * (m_distortionMapSize - 1)), 0, (int32_t)m_distortionMapSize - 1);
                 // clang-format on
 
-                // Distortion SHM contains RGBA samples, with R = U, G = V, B = unused, and A = validity
-                const uint32_t rowPitch = k_distortionMapSize * 4;
-                const auto getIndex = [](uint32_t u, uint32_t v) { return v * rowPitch + u * 4; };
+                // Distortion contains RGBA samples, with R = U, G = V, B = unused, and A = validity
+                const uint32_t rowPitch = m_distortionMapSize * 4;
+                const auto getIndex = [&rowPitch](uint32_t u, uint32_t v) { return v * rowPitch + u * 4; };
 
                 const uint32_t index = getIndex(u, v);
                 const auto getDistortion = [&](float* uv, uint32_t channel) {
-                    if (m_sharedDistortionMap[channel][index + 3]) {
-                        uv[0] = m_sharedDistortionMap[channel][index + 0];
-                        uv[1] = m_sharedDistortionMap[channel][index + 1];
-
+                    const float* map = (float*)m_distortionMap[channel].data();
+                    if (map[index + 3]) {
+                        uv[0] = eEye == vr::Eye_Left ? (1 - map[index + 0]) : map[index + 0];
+                        uv[1] = map[index + 1];
                     } else {
                         uv[0] = uv[1] = NAN;
                     }
                 };
 
-                // TODO: Add FOV tangents calculation.
                 getDistortion(result.rfRed, 0);
                 getDistortion(result.rfGreen, 1);
                 getDistortion(result.rfBlue, 2);
-
-#ifdef _DEBUG
-                if (u == k_distortionMapSize / 2 && v == 0 || v == k_distortionMapSize / 2 && u == 0 ||
-                    u == k_distortionMapSize / 2 && v == k_distortionMapSize - 1 ||
-                    v == k_distortionMapSize / 2 && u == k_distortionMapSize - 1) {
-                    DriverLog("Distortion Eye%d at (%d, %d) = r:(%.3f, %.3f), g:(%.3f, %.3f), b:(%.3f, %.3f)",
-                              eEye,
-                              u,
-                              v,
-                              result.rfRed[0],
-                              result.rfRed[1],
-                              result.rfGreen[0],
-                              result.rfGreen[1],
-                              result.rfBlue[0],
-                              result.rfBlue[1]);
-                }
-#endif
             } else {
                 CHECK_PVRCMD(pvr_getHmdDistortedUV(m_pvrSession, (pvrEyeType)eEye, {fU, fV}, (pvrVector2f*)&result));
             }
+#ifdef _DEBUG
+            const auto almostEquals = [&](float a, float b) { return std::abs(b - a) <= 1.f / m_distortionMapSize; };
+            if ((almostEquals(fU, 0.5f) && almostEquals(fV, 0.f)) ||
+                (almostEquals(fV, 0.5f) && almostEquals(fU, 0.f)) ||
+                (almostEquals(fU, 0.5f) && almostEquals(fV, 1.f)) ||
+                (almostEquals(fV, 0.5f) && almostEquals(fU, 1.f))) {
+                DriverLog("Distortion Eye%d at (%.2f, %.2f) = r:(%.3f, %.3f), g:(%.3f, %.3f), b:(%.3f, %.3f)",
+                          eEye,
+                          fU,
+                          fV,
+                          result.rfRed[0],
+                          result.rfRed[1],
+                          result.rfGreen[0],
+                          result.rfGreen[1],
+                          result.rfBlue[0],
+                          result.rfBlue[1]);
+            }
+#endif
+#if 0
+            result.rfRed[0] = result.rfGreen[0] = result.rfBlue[0] = fU;
+            result.rfRed[1] = result.rfGreen[1] = result.rfBlue[1] = fV;
+#endif
 
             TraceLoggingWriteStop(local,
                                   "HmdDriver_ComputeDistortion",
@@ -626,6 +594,16 @@ namespace {
             vr::VRProperties()->SetVec3Property(
                 container, vr::Prop_DisplayColorMultRight_Vector3, {redGain, greenGain, blueGain});
 
+            const bool useParallelProjections =
+                vr::VRSettings()->GetBool("driver_pimax_native", "use_parallel_projections");
+            if (useParallelProjections != m_useParallelProjections) {
+                TraceLoggingWriteTagged(
+                    local, "HmdDriver_ApplySettingsChanges", TLArg(useParallelProjections, "UseParallelProjections"));
+                UpdateEyeProperties();
+                vr::VRServerDriverHost()->VendorSpecificEvent(
+                    m_deviceIndex, vr::VREvent_LensDistortionChanged, {}, 0.0);
+            }
+
             // Dispatch settings update to the controllers.
             for (uint32_t side = 0; side < 2; side++) {
                 if (m_controllerDriver[side]) {
@@ -648,12 +626,6 @@ namespace {
 
             const vr::PropertyContainerHandle_t container =
                 vr::VRProperties()->TrackedDeviceToPropertyContainer(m_deviceIndex);
-
-            if (m_d3dDummyDevice) {
-                // Poke the bear.
-                static long long frameId = 0;
-                pvr_beginFrame(m_pvrSession, frameId++);
-            }
 
             pvrHmdStatus hmdStatus = {};
             CHECK_PVRCMD(pvr_getHmdStatus(m_pvrSession, &hmdStatus));
@@ -699,8 +671,9 @@ namespace {
             // Adjust IPD based on slider.
             const auto currentIpd = pvr_getFloatConfig(m_pvrSession, CONFIG_KEY_IPD, m_currentIpd);
             if (fabsf(currentIpd - m_currentIpd) >= 0.0001f) {
-                vr::VRProperties()->SetFloatProperty(container, vr::Prop_UserIpdMeters_Float, currentIpd);
-                m_currentIpd = currentIpd;
+                UpdateEyeProperties();
+                vr::VRServerDriverHost()->VendorSpecificEvent(
+                    m_deviceIndex, vr::VREvent_LensDistortionChanged, {}, 0.0);
             }
 
             TraceLoggingWriteTagged(local,
@@ -802,6 +775,46 @@ namespace {
             TraceLoggingWriteStop(local, "HmdDriver_RunFrame");
         }
 
+        void UpdateEyeProperties() {
+            TraceLocalActivity(local);
+            TraceLoggingWriteStart(local, "HmdDriver_UpdateEyeProperties", TLArg(m_deviceIndex, "ObjectId"));
+
+            const vr::PropertyContainerHandle_t container =
+                vr::VRProperties()->TrackedDeviceToPropertyContainer(m_deviceIndex);
+
+            m_useParallelProjections = vr::VRSettings()->GetBool("driver_pimax_native", "use_parallel_projections");
+            CHECK_PVRCMD(pvr_setIntConfig(m_pvrSession, "view_rotation_fix", m_useParallelProjections));
+
+            CHECK_PVRCMD(pvr_getEyeRenderInfo(m_pvrSession, pvrEye_Left, &m_pvrEyeRenderInfo[0]));
+            CHECK_PVRCMD(pvr_getEyeRenderInfo(m_pvrSession, pvrEye_Right, &m_pvrEyeRenderInfo[1]));
+            m_currentIpd = pvr_getFloatConfig(m_pvrSession, CONFIG_KEY_IPD, m_currentIpd);
+
+            {
+                const PVR::Matrix4f eyeToHead[] = {
+                    PVR::Matrix4(PVR::Posef(m_pvrEyeRenderInfo[pvrEye_Left].HmdToEyePose)),
+                    PVR::Matrix4(PVR::Posef(m_pvrEyeRenderInfo[pvrEye_Right].HmdToEyePose))};
+                vr::VRServerDriverHost()->SetDisplayEyeToHead(
+                    m_deviceIndex, StoreHmdMatrix34(eyeToHead[pvrEye_Left]), StoreHmdMatrix34(eyeToHead[pvrEye_Right]));
+            }
+            vr::VRProperties()->SetFloatProperty(container, vr::Prop_UserIpdMeters_Float, m_currentIpd);
+
+            {
+                // Must match GetProjectionRaw().
+                vr::HmdRect2_t left{}, right{};
+                left.vTopLeft.v[0] = -m_pvrEyeRenderInfo[pvrEye_Left].Fov.LeftTan * m_horizontalFovTangent;
+                left.vBottomRight.v[0] = m_pvrEyeRenderInfo[pvrEye_Left].Fov.RightTan * m_horizontalFovTangent;
+                left.vTopLeft.v[1] = -m_pvrEyeRenderInfo[pvrEye_Left].Fov.DownTan * m_verticalFovTangent;
+                left.vBottomRight.v[1] = m_pvrEyeRenderInfo[pvrEye_Left].Fov.UpTan * m_verticalFovTangent;
+                right.vTopLeft.v[0] = -m_pvrEyeRenderInfo[pvrEye_Right].Fov.LeftTan * m_horizontalFovTangent;
+                right.vBottomRight.v[0] = m_pvrEyeRenderInfo[pvrEye_Right].Fov.RightTan * m_horizontalFovTangent;
+                right.vTopLeft.v[1] = -m_pvrEyeRenderInfo[pvrEye_Right].Fov.DownTan * m_verticalFovTangent;
+                right.vBottomRight.v[1] = m_pvrEyeRenderInfo[pvrEye_Right].Fov.UpTan * m_verticalFovTangent;
+                vr::VRServerDriverHost()->SetDisplayProjectionRaw(m_deviceIndex, left, right);
+            }
+
+            TraceLoggingWriteStop(local, "HmdDriver_UpdateEyeProperties");
+        }
+
         void UpdateTrackingState(const pvrPoseStatef& state) override {
             TraceLocalActivity(local);
             TraceLoggingWriteStart(local, "HmdDriver_UpdateTrackingState", TLArg(m_deviceIndex, "ObjectId"));
@@ -841,10 +854,6 @@ namespace {
                 pose.result = vr::TrackingResult_Running_OK;
             }
 
-            {
-                std::unique_lock lock(m_poseMutex);
-                m_latestPose = pose;
-            }
             vr::VRServerDriverHost()->TrackedDevicePoseUpdated(m_deviceIndex, pose, sizeof(pose));
 
             TraceLoggingWriteStop(local, "HmdDriver_UpdateTrackingState", TLArg(pose.poseTimeOffset, "PoseTimeOffset"));
@@ -969,22 +978,26 @@ namespace {
         vr::VRInputComponentHandle_t m_components[ComponentCount] = {};
 
         pvrEnvHandle m_pvr = {};
+        pvrSessionHandle m_pvrSession = {};
         pvrHmdInfo m_pvrHmdInfo = {};
         pvrDisplayInfo m_pvrDisplayInfo = {};
+        float m_photonTime = 0.f;
         pvrEyeRenderInfo m_pvrEyeRenderInfo[pvrEye_Count] = {};
-        pvrSessionHandle m_pvrSession = {};
+        pvrSizei m_viewportSize = {};
+        std::vector<vr::HmdVector2_t> m_hiddenAreaMesh[pvrEye_Count];
+        std::vector<vr::HmdVector2_t> m_visibleAreaMesh[pvrEye_Count];
+        std::string m_playbackDevice;
+        std::string m_recordingDevice;
 
         bool m_hasEyeTracking = false;
+        bool m_hasVST = false;
 
         uint32_t m_displayResolutionWidth = 0;
         uint32_t m_displayResolutionHeight = 0;
         float m_horizontalFovTangent = 1.f;
         float m_verticalFovTangent = 1.f;
-
         float m_currentIpd = 0.0633f;
-
-        std::shared_mutex m_poseMutex;
-        vr::DriverPose_t m_latestPose = {};
+        bool m_useParallelProjections = false;
 
         std::unique_ptr<IControllerDriver> m_controllerDriver[2];
 
@@ -1001,10 +1014,8 @@ namespace {
         bool m_inClickEvent = false;
         PROCESS_INFORMATION m_clientProcessInfo = {};
 
-        wil::unique_handle m_sharedDistortionMapHandle[3];
-        float* m_sharedDistortionMap[3] = {};
-
-        ComPtr<ID3D11Device> m_d3dDummyDevice;
+        uint32_t m_distortionMapSize = 64;
+        std::string m_distortionMap[3];
     };
 
 } // namespace

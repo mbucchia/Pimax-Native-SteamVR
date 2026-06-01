@@ -139,6 +139,14 @@
         "requires_restart": true
       },
       {
+        "name": "/settings/driver_pimax_native/use_parallel_projections",
+        "control": "toggle",
+        "label": "Use Parallel Projections",
+        "advanced_only": true,
+        "on_label": "Yes",
+        "off_label": "No"
+      },
+      {
         "name": "/settings/driver_pimax_native/force_3dof",
         "control": "toggle",
         "label": "Force 3DoF Mode (Without Controllers)",
@@ -165,7 +173,6 @@
         "advanced_only": true,
         "on_label": "Yes",
         "off_label": "No",
-        "requires_restart": true,
         "requires": {
           "/settings/driver_pimax_native/developer_mode": true
         }
@@ -182,18 +189,6 @@
         "requires": {
           "/settings/driver_pimax_native/developer_mode": true,
           "/settings/driver_pimax_native/use_async_tracking": true
-        }
-      },
-      {
-        "name": "/settings/driver_pimax_native/disable_withdll",
-        "control": "toggle",
-        "label": "Disable WithDLL Injection",
-        "advanced_only": true,
-        "on_label": "Disable",
-        "off_label": "Auto",
-        "requires_restart": true,
-        "requires": {
-          "/settings/driver_pimax_native/developer_mode": true
         }
       }
     ]

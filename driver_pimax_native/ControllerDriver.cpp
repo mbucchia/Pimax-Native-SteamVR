@@ -71,12 +71,6 @@ namespace {
                 m_serialNumber = m_role == vr::TrackedControllerRole_LeftHand ? "DEFAULTLEFT" : "DEFAULTRIGHT";
             }
 
-            // Initial pose fields.
-            m_latestPose.qWorldFromDriverRotation.w = m_latestPose.qDriverFromHeadRotation.w =
-                m_latestPose.qRotation.w = 1.f;
-            m_latestPose.deviceIsConnected = true;
-            m_latestPose.result = vr::TrackingResult_Running_OutOfRange;
-
             TraceLoggingWriteStop(local, "ControllerDriver_Ctor");
         }
 
@@ -114,7 +108,7 @@ namespace {
                 container, vr::Prop_InputProfilePath_String, "{oculus}/input/touch_profile.json");
             vr::VRProperties()->SetStringProperty(container, vr::Prop_ControllerType_String, "oculus_touch");
 
-            vr::VRProperties()->SetUint64Property(container, vr::Prop_CurrentUniverseId_Uint64, 1);
+            vr::VRProperties()->SetUint64Property(container, vr::Prop_CurrentUniverseId_Uint64, k_UniverseId);
 
             {
                 using namespace DirectX;
@@ -289,8 +283,8 @@ namespace {
         }
 
         vr::DriverPose_t GetPose() override {
-            std::shared_lock lock(m_poseMutex);
-            return m_latestPose;
+            // This method is not used by SteamVR.
+            return {};
         }
 
         void DebugRequest(const char* pchRequest, char* pchResponseBuffer, uint32_t unResponseBufferSize) override {
@@ -465,10 +459,6 @@ namespace {
                     pose.result = vr::TrackingResult_Running_OK;
                 }
 
-                {
-                    std::unique_lock lock(m_poseMutex);
-                    m_latestPose = pose;
-                }
                 vr::VRServerDriverHost()->TrackedDevicePoseUpdated(m_deviceIndex, pose, sizeof(pose));
             }
 
@@ -484,10 +474,6 @@ namespace {
             pose.qWorldFromDriverRotation.w = pose.qDriverFromHeadRotation.w = pose.qRotation.w = 1.0;
             pose.result = vr::TrackingResult_Running_OutOfRange;
 
-            {
-                std::unique_lock lock(m_poseMutex);
-                m_latestPose = pose;
-            }
             vr::VRServerDriverHost()->TrackedDevicePoseUpdated(m_deviceIndex, pose, sizeof(pose));
 
             TraceLoggingWriteStop(local, "ControllerDriver_Disconnect");
@@ -512,9 +498,6 @@ namespace {
         std::string m_serialNumber;
 
         DirectX::XMMATRIX m_poseOffset = DirectX::XMMatrixIdentity();
-
-        std::shared_mutex m_poseMutex;
-        vr::DriverPose_t m_latestPose = {};
 
         bool m_usePimaxButton = true;
     };
