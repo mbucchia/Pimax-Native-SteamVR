@@ -53,7 +53,6 @@ using Microsoft::WRL::ComPtr;
 #include <string>
 
 #include <openvr_driver.h>
-#include <driverlog.h>
 
 #include <PVR.h>
 #include <PVR_API_D3D.h>

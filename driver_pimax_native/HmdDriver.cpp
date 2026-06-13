@@ -154,7 +154,7 @@ namespace {
             m_recordingDevice = pvr_getTrackedDeviceStringPropertyHelper(
                 m_pvrSession, pvrTrackedDevice_HMD, pvrTrackedDeviceProp_Audio_RecordingDeviceId_String);
             TraceLoggingWriteTagged(local,
-                                    "HmdDriver_Activate",
+                                    "HmdDriver_Ctor",
                                     TLArg(m_pvrHmdInfo.ProductName, "ProductName"),
                                     TLArg(m_pvrHmdInfo.ProductId, "ProductId"),
                                     TLArg(m_photonTime, "VsyncToPhotons"),

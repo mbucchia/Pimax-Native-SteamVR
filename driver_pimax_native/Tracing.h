@@ -30,3 +30,22 @@ TRACELOGGING_DECLARE_PROVIDER(TraceProvider);
 
 #define TLArg(var, ...) TraceLoggingValue(var, ##__VA_ARGS__)
 #define TLPArg(var, ...) TraceLoggingPointer(var, ##__VA_ARGS__)
+
+namespace {
+    void DriverLogVarArgs(const char* pMsgFormat, va_list args) {
+        char buf[1024];
+        vsnprintf_s(buf, sizeof(buf), pMsgFormat, args);
+
+        TraceLoggingWrite(TraceProvider, "DriverLog", TLArg(buf, "Message"));
+        vr::VRDriverLog()->Log(buf);
+    }
+} // namespace
+
+static inline void DriverLog(const char* pMsgFormat, ...) {
+    va_list args;
+    va_start(args, pMsgFormat);
+
+    DriverLogVarArgs(pMsgFormat, args);
+
+    va_end(args);
+}
