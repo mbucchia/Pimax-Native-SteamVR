@@ -305,13 +305,12 @@ namespace {
             if (m_deviceIndex != vr::k_unTrackedDeviceIndexInvalid) {
                 const float multiplier = vr::VRSettings()->GetFloat("driver_pimax_native", "haptics_strength");
 
-                CHECK_PVRCMD(pvr_triggerHapticPulse(m_pvrSession,
-                                                    m_role == vr::TrackedControllerRole_LeftHand
-                                                        ? pvrTrackedDevice_LeftController
-                                                        : pvrTrackedDevice_RightController,
-                                                    data.fAmplitude * multiplier,
-                                                    std::max(data.fDurationSeconds, 0.02f),
-                                                    data.fFrequency));
+                pvr_triggerHapticPulse(m_pvrSession,
+                                       m_role == vr::TrackedControllerRole_LeftHand ? pvrTrackedDevice_LeftController
+                                                                                    : pvrTrackedDevice_RightController,
+                                       data.fAmplitude * multiplier,
+                                       std::max(data.fDurationSeconds, 0.02f),
+                                       data.fFrequency);
             }
 
             TraceLoggingWriteStop(local, "ControllerDriver_SendHapticEvent");
