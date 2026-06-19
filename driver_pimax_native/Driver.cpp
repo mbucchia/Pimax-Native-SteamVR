@@ -87,7 +87,9 @@ namespace {
                         pvrTrackedDeviceProp_Prop_HmdTrackingStyle_Int,
                         pvrHmdTrackingStyle_Unknown);
 
-                    if (isOpenPortEnabled && trackingStyle == pvrHmdTrackingStyle_InsideOutCameras) {
+                    if (isOpenPortEnabled &&
+                        (trackingStyle == pvrHmdTrackingStyle_InsideOutCameras ||
+                         vr::VRSettings()->GetBool("driver_pimax_native", "allow_lighthouse_headsets"))) {
                         try {
                             hmdDriver = driver::CreateHmdDriver(pvr, pvrSession);
                             vr::VRServerDriverHost()->TrackedDeviceAdded(

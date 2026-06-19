@@ -14,7 +14,7 @@
     "use_parallel_projections": false,
     "force_3dof": false,
     "use_eye_tracking": true,
-    "use_async_tracking": false,
+    "use_async_tracking": true,
     "async_tracking_period": 2
   }
 }
