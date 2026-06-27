@@ -421,11 +421,11 @@ namespace {
             pose.qWorldFromDriverRotation.w = pose.qDriverFromHeadRotation.w = pose.qRotation.w = 1.0;
 
             if (m_deviceIndex != vr::k_unTrackedDeviceIndexInvalid) {
-                pose.deviceIsConnected = true;
+                pose.deviceIsConnected = m_isConnected;
                 pose.result = vr::TrackingResult_Running_OutOfRange;
 
                 const bool force3Dof = vr::VRSettings()->GetBool("driver_pimax_native", "force_3dof");
-                if ((state.StatusFlags & pvrStatus_OrientationTracked) && !force3Dof) {
+                if (m_isConnected && (state.StatusFlags & pvrStatus_OrientationTracked) && !force3Dof) {
                     pose.vecPosition[0] = state.ThePose.Position.x;
                     pose.vecPosition[1] = state.ThePose.Position.y;
                     pose.vecPosition[2] = state.ThePose.Position.z;
@@ -465,6 +465,15 @@ namespace {
                 local, "ControllerDriver_UpdateTrackingState", TLArg(pose.poseTimeOffset, "PoseTimeOffset"));
         }
 
+        void Connect() override {
+            TraceLocalActivity(local);
+            TraceLoggingWriteStart(local, "ControllerDriver_Connect", TLArg(m_deviceIndex, "ObjectId"));
+
+            m_isConnected = true;
+
+            TraceLoggingWriteStop(local, "ControllerDriver_Connect");
+        }
+
         void Disconnect() override {
             TraceLocalActivity(local);
             TraceLoggingWriteStart(local, "ControllerDriver_Disconnect", TLArg(m_deviceIndex, "ObjectId"));
@@ -472,17 +481,22 @@ namespace {
             vr::DriverPose_t pose = {};
             pose.qWorldFromDriverRotation.w = pose.qDriverFromHeadRotation.w = pose.qRotation.w = 1.0;
             pose.result = vr::TrackingResult_Running_OutOfRange;
+            m_isConnected = false;
 
             vr::VRServerDriverHost()->TrackedDevicePoseUpdated(m_deviceIndex, pose, sizeof(pose));
 
             TraceLoggingWriteStop(local, "ControllerDriver_Disconnect");
         }
 
-        vr::TrackedDeviceIndex_t GetDeviceIndex() const {
+        bool IsConnected() const override {
+            return m_isConnected;
+        }
+
+        vr::TrackedDeviceIndex_t GetDeviceIndex() const override {
             return m_deviceIndex;
         }
 
-        const char* GetSerialNumber() const {
+        const char* GetSerialNumber() const override {
             return m_serialNumber.c_str();
         }
 
@@ -495,6 +509,7 @@ namespace {
         vr::VRInputComponentHandle_t m_components[ComponentCount] = {};
 
         std::string m_serialNumber;
+        bool m_isConnected = false;
 
         DirectX::XMMATRIX m_poseOffset = DirectX::XMMatrixIdentity();
 

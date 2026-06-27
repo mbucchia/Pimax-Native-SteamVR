@@ -703,15 +703,14 @@ namespace {
                     m_pvrSession,
                     side == 0 ? pvrTrackedDevice_LeftController : pvrTrackedDevice_RightController,
                     pvrTrackedDeviceProp_ControllerType_String);
-                const bool isActive = !controllerType.empty();
-                if (isActive) {
-                    TraceLoggingWriteTagged(local,
-                                            "HmdDriver_RunFrame",
-                                            TLArg(controllerType.c_str(), "DetectedController"),
-                                            TLArg(side == 0 ? "Left" : "Right", "Side"));
-                    if (!m_controllerDriver[side]) {
-                        const bool isPimaxController = controllerType == "pimax_crystal";
-                        if (isPimaxController) {
+                TraceLoggingWriteTagged(local,
+                                        "HmdDriver_RunFrame",
+                                        TLArg(controllerType.c_str(), "DetectedController"),
+                                        TLArg(side == 0 ? "Left" : "Right", "Side"));
+                const bool isPimaxController = controllerType == "pimax_crystal";
+                if (isPimaxController) {
+                    if (isPimaxController) {
+                        if (!m_controllerDriver[side]) {
                             m_controllerDriver[side] = CreateControllerDriver(
                                 m_pvr,
                                 m_pvrSession,
@@ -721,9 +720,12 @@ namespace {
                                                                          vr::TrackedDeviceClass_Controller,
                                                                          m_controllerDriver[side].get());
                         }
+                        if (m_controllerDriver[side] && !m_controllerDriver[side]->IsConnected()) {
+                            m_controllerDriver[side]->Connect();
+                        }
                     }
                 } else {
-                    if (m_controllerDriver[side]) {
+                    if (m_controllerDriver[side] && m_controllerDriver[side]->IsConnected()) {
                         // We never remove the controller driver, we just mark it as disconnected.
                         m_controllerDriver[side]->Disconnect();
                     }

@@ -32,7 +32,9 @@ namespace driver {
         virtual void ApplySettingsChanges() = 0;
         virtual void RunFrame() = 0;
         virtual void UpdateTrackingState(const pvrPoseStatef& state) = 0;
+        virtual void Connect() = 0;
         virtual void Disconnect() = 0;
+        virtual bool IsConnected() const = 0;
         virtual const char* GetSerialNumber() const = 0;
         virtual vr::TrackedDeviceIndex_t GetDeviceIndex() const = 0;
     };
