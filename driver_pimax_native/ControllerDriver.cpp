@@ -243,10 +243,10 @@ namespace {
             vr::VRDriverInput()->CreateBooleanComponent(
                 container, "/input/thumbrest/touch", &m_components[ComponentThumbrestTouch]);
 
-            if (isLeft) {
-                vr::VRDriverInput()->CreateBooleanComponent(
-                    container, "/input/system/click", &m_components[ComponentMenu]);
-            }
+            // The input profile does not support the system button on the right hand, however it still appears to work
+            // in SteamVR to invoke the dashboard. It's a happy accident.
+            vr::VRDriverInput()->CreateBooleanComponent(container, "/input/system/click", &m_components[ComponentMenu]);
+
             vr::VRDriverInput()->CreateBooleanComponent(
                 container, isLeft ? "/input/y/click" : "/input/b/click", &m_components[ComponentButton1]);
             vr::VRDriverInput()->CreateBooleanComponent(
@@ -388,7 +388,7 @@ namespace {
                     m_components[ComponentButton1Touch], state.HandTouches[side] & pvrButton_B, timeOffset);
                 vr::VRDriverInput()->UpdateBooleanComponent(
                     m_components[ComponentButton2Touch], state.HandTouches[side] & pvrButton_A, timeOffset);
-                if (side == 0 && m_usePimaxButton) {
+                if (m_usePimaxButton) {
                     vr::VRDriverInput()->UpdateBooleanComponent(
                         m_components[ComponentMenu], state.HandButtons[side] & pvrButton_ApplicationMenu, timeOffset);
                 }
