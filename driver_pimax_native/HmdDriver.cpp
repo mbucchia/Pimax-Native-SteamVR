@@ -61,7 +61,9 @@ namespace {
                                     TLArg(m_pvrHmdInfo.FirmwareMajor, "FirmwareMajor"),
                                     TLArg(m_pvrHmdInfo.Resolution.w, "ResolutionWidth"),
                                     TLArg(m_pvrHmdInfo.Resolution.h, "ResolutionHeight"));
-            DriverLog("Product: %s (%04x)", m_pvrHmdInfo.ProductName, m_pvrHmdInfo.ProductId);
+            char codename[128]{};
+            pvr_getStringConfig(m_pvrSession, "hmd_codename", codename, sizeof(codename));
+            DriverLog("Product: %s / %s (%04x)", m_pvrHmdInfo.ProductName, codename, m_pvrHmdInfo.ProductId);
 
             CHECK_PVRCMD(pvr_getEyeDisplayInfo(m_pvrSession, pvrEye_Left, &m_pvrDisplayInfo));
             TraceLoggingWriteTagged(local,
