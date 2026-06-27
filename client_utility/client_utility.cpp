@@ -24,10 +24,6 @@
 #include <windows.h>
 #include <openvr.h>
 #pragma comment(lib, "openvr_api.lib")
-#if 0
-#include <steam_api.h>
-#pragma comment(lib, "steam_api64.lib")
-#endif
 
 #include <chrono>
 #include <string>
@@ -43,11 +39,8 @@ LRESULT __stdcall CallbackProc(int nCode, WPARAM wParam, LPARAM lParam) {
         switch (key->vkCode) {
         case VK_LWIN:
         case VK_RWIN:
-            if (!vr::VROverlay()->IsDashboardVisible()) {
-                if (g_sharedMemory->allowOpenDashboard) {
-                    vr::VROverlay()->ShowDashboard("system.desktop.1");
-                }
-            } else {
+            if ((!vr::VROverlay()->IsDashboardVisible() && g_sharedMemory->allowOpenDashboard) ||
+                vr::VROverlay()->IsDashboardVisible()) {
                 g_sharedMemory->sendClickEvent = 1;
             }
             break;
@@ -98,15 +91,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
         return 1;
     }
 
-#if 0
-    SetEnvironmentVariable(L"STEAM_APPID", nullptr);
-    SetEnvironmentVariable(L"SteamAppId", nullptr);
-
-    SteamErrMsg errMsg{};
-    SteamAPI_InitEx(&errMsg);
-    OutputDebugStringA(errMsg);
-#endif
-
     HMODULE user32 = nullptr;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, L"user32.dll", &user32);
 
@@ -143,10 +127,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     if (sharedFileHandle) {
         CloseHandle(sharedFileHandle);
     }
-
-#if 0
-    SteamAPI_Shutdown();
-#endif
 
     return 0;
 }
