@@ -19,6 +19,7 @@ This driver is a work-in-progress and is currently not usable by end users.
 - Eye tracking
 - Video See Through (VST)
 - Visibility mask
+- Pimax Foveated Rendering ("LibMagic")
 
 # Building from source
 

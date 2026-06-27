@@ -572,6 +572,20 @@ namespace {
             TraceLoggingWriteStop(local, "HmdDriver_SendHapticEvent");
         }
 
+        void SendSceneApplicationChangedEvent(uint32_t newSceneApplicationPid) override {
+            TraceLocalActivity(local);
+            TraceLoggingWriteStart(local,
+                                   "HmdDriver_SendSceneApplicationChangedEvent",
+                                   TLArg(m_deviceIndex, "ObjectId"),
+                                   TLArg(newSceneApplicationPid, "SceneApplicationPid"));
+
+            // Signal Pimax Play to perform a MagicAttach (DFR injector) when a new scene app started.
+            pvr_setIntConfig(m_pvrSession, "openvr_client_changed", newSceneApplicationPid);
+            m_lastSceneApplicationPid = newSceneApplicationPid;
+
+            TraceLoggingWriteStop(local, "HmdDriver_SendSceneApplicationChangedEvent");
+        }
+
         void ApplySettingsChanges() override {
             TraceLocalActivity(local);
             TraceLoggingWriteStart(local, "HmdDriver_ApplySettingsChanges", TLArg(m_deviceIndex, "ObjectId"));
@@ -772,6 +786,16 @@ namespace {
                     vr::VRDriverInput()->UpdateBooleanComponent(m_components[ComponentSystemClick], false, 0);
                     m_inClickEvent = false;
                 }
+            }
+
+            // Detect if Pimax LibMagic (DFR injector) was enabled after a scene application started and re-assert the
+            // PID of the current scene application.
+            const bool isLibMagicEnabled = pvr_getIntConfig(m_pvrSession, "enable_foveated_rendering", 0);
+            if (isLibMagicEnabled != m_wasLibMagicEnabled) {
+                if (m_lastSceneApplicationPid) {
+                    pvr_setIntConfig(m_pvrSession, "openvr_client_changed", m_lastSceneApplicationPid);
+                }
+                m_wasLibMagicEnabled = isLibMagicEnabled;
             }
 
             TraceLoggingWriteStop(local, "HmdDriver_RunFrame");
@@ -1015,6 +1039,9 @@ namespace {
         shared::SharedMemory* m_sharedMemory = nullptr;
         bool m_inClickEvent = false;
         PROCESS_INFORMATION m_clientProcessInfo = {};
+
+        uint32_t m_lastSceneApplicationPid = 0;
+        bool m_wasLibMagicEnabled = false;
 
         uint32_t m_distortionMapSize = 64;
         std::string m_distortionMap[3];

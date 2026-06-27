@@ -27,6 +27,7 @@ namespace driver {
     struct IHmdDriver : public vr::ITrackedDeviceServerDriver {
         virtual ~IHmdDriver() = default;
         virtual void SendHapticEvent(const vr::VREvent_HapticVibration_t& data) = 0;
+        virtual void SendSceneApplicationChangedEvent(uint32_t newSceneApplicationPid) = 0;
         virtual void ApplySettingsChanges() = 0;
         virtual void RunFrame() = 0;
         virtual void UpdateTrackingState(const pvrPoseStatef& state) = 0;

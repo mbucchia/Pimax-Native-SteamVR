@@ -146,6 +146,9 @@ namespace {
                     case vr::VREvent_AnyDriverSettingsChanged:
                         hmdDriver->ApplySettingsChanges();
                         break;
+                    case vr::VREvent_SceneApplicationChanged:
+                        hmdDriver->SendSceneApplicationChangedEvent(event.data.process.pid);
+                        break;
 #ifdef _DEBUG
                     case vr::VREvent_ProcessConnected:
                         {
