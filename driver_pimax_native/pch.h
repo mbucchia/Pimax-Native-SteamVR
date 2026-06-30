@@ -58,9 +58,6 @@ using Microsoft::WRL::ComPtr;
 #include <PVR_API_D3D.h>
 #include <PVR_Math.h>
 
-// This definition is not in PVR SDK (yet?).
-static constexpr pvrVSTStreamFormat pvrVST_FORMAT_RAW8 = (pvrVSTStreamFormat)2;
-
 #include <cJSON.h>
 #include <detours.h>
 #include <DirectXMath.h>
