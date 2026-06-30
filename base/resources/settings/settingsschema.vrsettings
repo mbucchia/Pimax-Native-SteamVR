@@ -155,6 +155,20 @@
         "off_label": "No"
       },
       {
+        "name": "/settings/driver_pimax_native/use_hand_tracking",
+        "control": "toggle",
+        "label": "Use Hand Tracking",
+        "requires_restart": true
+      },
+      {
+        "name": "/settings/driver_pimax_native/use_tap_wrist",
+        "control": "toggle",
+        "label": "Tap Wrist of Hand For Dashboard",
+        "requires": {
+          "/settings/driver_cloudxr/enable_hand_tracking": true
+        }
+      },
+      {
         "name": "/settings/driver_pimax_native/use_eye_tracking",
         "control": "toggle",
         "label": "Use Eye Tracking (When Supported)",

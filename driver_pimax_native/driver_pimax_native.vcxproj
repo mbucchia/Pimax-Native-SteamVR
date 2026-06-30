@@ -149,6 +149,7 @@ echo const char* DriverCommitHash = "%commit%"; &gt;&gt; $(IntDir)\commit.h
     <ClInclude Include="CompositorDriver.h" />
     <ClInclude Include="ControllerDriver.h" />
     <ClInclude Include="ErrorHandling.h" />
+    <ClInclude Include="HandDriver.h" />
     <ClInclude Include="HmdDriver.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="resource.h" />
@@ -167,6 +168,7 @@ echo const char* DriverCommitHash = "%commit%"; &gt;&gt; $(IntDir)\commit.h
     <ClCompile Include="ControllerDriver.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="Driver.cpp" />
+    <ClCompile Include="HandDriver.cpp" />
     <ClCompile Include="HmdDriver.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>

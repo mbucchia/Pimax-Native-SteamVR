@@ -13,6 +13,8 @@
     "use_hidden_area_mesh": false,
     "use_parallel_projections": false,
     "force_3dof": false,
+    "use_hand_tracking": false,
+    "use_wrist_palm": false,
     "use_eye_tracking": true,
     "use_async_tracking": true,
     "async_tracking_period": 2

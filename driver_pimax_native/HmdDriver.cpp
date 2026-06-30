@@ -25,6 +25,7 @@
 #include "CameraDriver.h"
 #include "ControllerDriver.h"
 #include "ErrorHandling.h"
+#include "HandDriver.h"
 #include "HmdDriver.h"
 #include "SharedMemory.h"
 #include "Tracing.h"
@@ -558,7 +559,7 @@ namespace {
                                    TLArg(m_deviceIndex, "ObjectId"),
                                    TLArg(data.containerHandle, "Container"));
 
-            // Dispatch events to the comtrollers.
+            // Dispatch events to the controllers.
             for (uint32_t side = 0; side < 2; side++) {
                 if (m_controllerDriver[side]) {
                     if (vr::VRProperties()->TrackedDeviceToPropertyContainer(
@@ -624,6 +625,9 @@ namespace {
             for (uint32_t side = 0; side < 2; side++) {
                 if (m_controllerDriver[side]) {
                     m_controllerDriver[side]->ApplySettingsChanges();
+                }
+                if (m_handDriver[side]) {
+                    m_handDriver[side]->ApplySettingsChanges();
                 }
             }
 
@@ -730,10 +734,33 @@ namespace {
                         m_controllerDriver[side]->Disconnect();
                     }
                 }
+                if (vr::VRSettings()->GetBool("driver_pimax_native", "use_hand_tracking")) {
+                    if (!m_handDriver[side]) {
+                        m_handDriver[side] = CreateHandDriver(m_pvr,
+                                                              m_pvrSession,
+                                                              side == 0 ? vr::TrackedControllerRole_LeftHand
+                                                                        : vr::TrackedControllerRole_RightHand);
+
+                        vr::VRServerDriverHost()->TrackedDeviceAdded(m_handDriver[side]->GetSerialNumber(),
+                                                                     vr::TrackedDeviceClass_Controller,
+                                                                     m_handDriver[side].get());
+                    }
+                    if (m_handDriver[side] && !m_handDriver[side]->IsConnected()) {
+                        m_handDriver[side]->Connect();
+                    }
+                } else {
+                    if (m_handDriver[side] && m_handDriver[side]->IsConnected()) {
+                        // We never remove the hand driver, we just mark it as disconnected.
+                        m_handDriver[side]->Disconnect();
+                    }
+                }
 
                 // Dispatch RunFrame() to the controllers.
                 if (m_controllerDriver[side]) {
                     m_controllerDriver[side]->RunFrame();
+                }
+                if (m_handDriver[side]) {
+                    m_handDriver[side]->RunFrame();
                 }
             }
 
@@ -934,6 +961,8 @@ namespace {
                                     TLArg(ToString(state.HeadPose.AngularVelocity).c_str(), "AngularVelocity"),
                                     TLArg(ToString(state.HeadPose.LinearVelocity).c_str(), "LinearVelocity"),
                                     TLArg(state.HeadPose.TimeInSeconds, "TimeInSeconds"));
+            pvrHandTrackingInputState handState = {};
+            CHECK_PVRCMD(pvr_getHandTrackingInputState(m_pvrSession, &handState));
 
             UpdateTrackingState(state.HeadPose);
 
@@ -950,6 +979,17 @@ namespace {
                         TLArg(state.HandPoses[side].TimeInSeconds, "TimeInSeconds"));
 
                     m_controllerDriver[side]->UpdateTrackingState(state.HandPoses[side]);
+                }
+                if (m_handDriver[side]) {
+                    TraceLoggingWriteTagged(local,
+                                            "HmdDriver_UpdatePvrState_HandTrackingState",
+                                            TLArg(side == 0 ? "Left" : "Right", "Side"),
+                                            TLArg(handState.IsValid[side], "IsValid"),
+                                            TLArg(handState.HandStatus[side], "StatusFlags"),
+                                            TLArg(ToString(handState.PointerPose[side]).c_str(), "Pose"),
+                                            TLArg(handState.TimeInSeconds, "TimeInSeconds"));
+
+                    m_handDriver[side]->UpdateTrackingState(handState);
                 }
             }
 
@@ -1028,6 +1068,7 @@ namespace {
         bool m_useParallelProjections = false;
 
         std::unique_ptr<IControllerDriver> m_controllerDriver[2];
+        std::unique_ptr<IHandDriver> m_handDriver[2];
 
         std::unique_ptr<ICameraDriver> m_cameraDriver;
 

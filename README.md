@@ -16,6 +16,7 @@ This driver is a work-in-progress and is currently not usable by end users.
 - Motion Controllers tracking (Pimax Crystal controllers only)
 - Motion Controllers inputs (eg: triggers, buttons...)
 - Motion Controllers haptics
+- Optical hand tracking
 - Eye tracking
 - Video See Through (VST)
 - Visibility mask
